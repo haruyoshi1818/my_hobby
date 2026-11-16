@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Fireball FX Editor</title>
+<style>
+  :root{--ac:#ff8a3d;--bg:rgba(16,13,11,.86);--ln:rgba(255,170,100,.16);--tx:#f1e4cc}
+  html,body{margin:0;height:100%;background:#050405;overflow:hidden;
+    font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:var(--tx)}
+  canvas{display:block;touch-action:none}
+  button{font:inherit;color:var(--tx);cursor:pointer}
+  .top{position:fixed;left:12px;top:12px;right:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;pointer-events:none;z-index:5}
+  .top .ttl{font-size:12px;font-weight:600;letter-spacing:.16em;margin-right:6px;text-shadow:0 1px 4px #000}
+  .top button{pointer-events:auto;font-size:12px;background:rgba(20,16,12,.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    border:1px solid var(--ln);border-radius:8px;padding:7px 11px}
+  .top button.on{background:rgba(255,120,40,.35);border-color:rgba(255,150,80,.5)}
+  .top button.boom{background:linear-gradient(#c9471a,#8f2a0b);border-color:#ff9a55}
+  .top .sp{flex:1}
+  #panel{position:fixed;right:12px;top:58px;bottom:12px;width:300px;background:var(--bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:1px solid var(--ln);border-radius:14px;overflow:auto;z-index:6;font-size:12px;transition:transform .25s}
+  #panel.hide{transform:translateX(calc(100% + 24px))}
+  @media (max-width:700px){
+    #panel{left:8px;right:8px;width:auto;top:auto;bottom:8px;height:42vh;max-height:42vh}
+    #panel.hide{transform:translateY(calc(100% + 24px))}
+  }
+  .ph{padding:12px 12px 8px;border-bottom:1px solid var(--ln);display:grid;gap:8px;position:sticky;top:0;background:rgba(18,14,12,.97);z-index:1}
+  .row{display:flex;gap:6px;align-items:center}
+  .row>*{min-width:0}
+  select,input[type=text],textarea{font:inherit;color:var(--tx);background:rgba(255,255,255,.05);border:1px solid var(--ln);border-radius:7px;padding:6px 8px}
+  select{flex:1}
+  input[type=text]{flex:1}
+  .btn{background:rgba(255,140,60,.14);border:1px solid rgba(255,160,90,.3);border-radius:7px;padding:6px 10px;font-size:12px;white-space:nowrap}
+  .btn.pri{background:var(--ac);color:#1a0d04;border-color:var(--ac);font-weight:600}
+  details{border-bottom:1px solid var(--ln)}
+  summary{padding:10px 12px;font-weight:600;cursor:pointer;list-style:none;display:flex;justify-content:space-between}
+  summary::after{content:"+";opacity:.5}
+  details[open] summary::after{content:"–"}
+  .ctl{display:grid;grid-template-columns:96px 1fr 44px;gap:8px;align-items:center;padding:4px 12px}
+  .ctl:last-child{padding-bottom:12px}
+  .ctl label{opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ctl input[type=range]{width:100%;accent-color:var(--ac)}
+  .ctl input[type=color]{width:100%;height:24px;border:1px solid var(--ln);border-radius:6px;background:none;padding:0}
+  .ctl .val{text-align:right;font-variant-numeric:tabular-nums;opacity:.7;font-size:11px}
+  .saved{display:flex;flex-wrap:wrap;gap:5px}
+  .chip{display:flex;align-items:center;border:1px solid var(--ln);border-radius:20px;overflow:hidden}
+  .chip button{background:none;border:0;padding:4px 9px;font-size:11px}
+  .chip button+button{border-left:1px solid var(--ln);opacity:.6;padding:4px 7px}
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;place-items:center;z-index:10}
+  #modal.show{display:grid}
+  .mbox{width:min(760px,94vw);height:min(600px,86vh);background:#141010;border:1px solid var(--ln);border-radius:14px;display:flex;flex-direction:column;overflow:hidden}
+  .tabs{display:flex;gap:4px;padding:10px 10px 0}
+  .tabs button{background:none;border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;padding:7px 12px;font-size:12px;opacity:.6}
+  .tabs button.on{opacity:1;border-color:var(--ln);background:rgba(255,255,255,.04)}
+  .mbox textarea{flex:1;margin:0 10px;resize:none;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;white-space:pre;border-radius:0 8px 8px 8px}
+  .mfoot{display:flex;gap:6px;padding:10px;align-items:center}
+  .mfoot .note{flex:1;font-size:11px;opacity:.6}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;background:#2a1a10;border:1px solid var(--ln);
+    padding:8px 14px;border-radius:20px;font-size:12px;z-index:20;transition:.25s;pointer-events:none}
+  #toast.show{opacity:1;transform:translateX(-50%)}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<script type="module" id="engine">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* =====================================================================
+   설정 (에디터에서 바꾸는 모든 값)
+   ===================================================================== */
+const DEFAULT = {
+  colors: { c4: '#fffaf1', c3: '#ffe7ad', c2: '#ffbc59', c1: '#ff7c27', c0: '#812100',
+            ember: '#ff9a45', spark: '#ffb35c', smoke: '#2a2423' },
+  core:   { size: 1, intensity: 2.2, temperature: .98, turbulence: 1, flow: 1, tail: 1, glow: .38 },
+  motion: { mode: 'fly', flySpeed: 1, pathSize: 1, wind: 6 },
+  fire:   { rate: 330, size: 1, life: 1, speed: 1, bright: .42 },
+  embers: { rate: 90, size: 1, life: 1, speed: 1 },
+  sparks: { rate: 45, life: 1, speed: 1, gravity: 2, bright: 1 },
+  smoke:  { rate: 7, opacity: .4, size: 1 },
+  post:   { bloom: .55, bloomRadius: .5, heat: 1, exposure: 1, light: 1, ground: true },
+};
+const PRESETS = {
+  '화염 (기본)': {},
+  '푸른 플라즈마': { colors: { c4: '#f4fdff', c3: '#a6e6ff', c2: '#3aa8ff', c1: '#0b4fff', c0: '#001244', ember: '#73c9ff', spark: '#9fe0ff', smoke: '#10141c' },
+                     core: { temperature: 1.05, turbulence: .8, flow: 1.4 }, smoke: { rate: 2 } },
+  '독성 그린': { colors: { c4: '#f9fff0', c3: '#d8ff90', c2: '#86ff24', c1: '#2fa800', c0: '#0a2400', ember: '#a6ff52', spark: '#ccff70', smoke: '#18221a' },
+                 core: { turbulence: 1.5, flow: .7 }, smoke: { rate: 18, opacity: .55 } },
+  '아케인 퍼플': { colors: { c4: '#fff4ff', c3: '#f2b0ff', c2: '#c650ff', c1: '#7a14ff', c0: '#1c0033', ember: '#d888ff', spark: '#f2b8ff', smoke: '#1a1022' },
+                  core: { turbulence: 1.2, flow: 1.6 }, sparks: { rate: 90 }, smoke: { rate: 3 } },
+  '지옥불 (대형)': { core: { size: 1.7, intensity: 3.2, turbulence: 1.4 }, fire: { rate: 620, size: 1.5, life: 1.3 },
+                   smoke: { rate: 26, opacity: .55, size: 1.6 }, sparks: { rate: 110 }, post: { bloom: .8, light: 1.8 } },
+  '작은 불씨탄': { core: { size: .55, intensity: 2.8, tail: .8 }, fire: { rate: 200, size: .55, life: .7 },
+                  embers: { rate: 140, size: .7 }, sparks: { rate: 70, speed: 1.4 }, smoke: { rate: 0 } },
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+function merge(dst, src) { for (const k in src) { if (src[k] && typeof src[k] === 'object' && !Array.isArray(src[k])) { dst[k] = dst[k] || {}; merge(dst[k], src[k]); } else dst[k] = src[k]; } return dst; }
+const C = merge(clone(DEFAULT), window.FX_CONFIG || {});
+const EMBED = !!window.FX_EMBED;
+
+/* ===================================================================== */
+const rand = (a = 0, b = 1) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
+function randSphere(out, r = 1) {
+  let x, y, z, l;
+  do { x = rand(-1, 1); y = rand(-1, 1); z = rand(-1, 1); l = x * x + y * y + z * z; } while (l > 1 || l < 1e-4);
+  return out.set(x, y, z).multiplyScalar(r);
+}
+const IS_MOBILE = matchMedia('(pointer: coarse)').matches;
+const PR = Math.min(window.devicePixelRatio || 1, IS_MOBILE ? 1.25 : 1.5);
+
+/* ================= 렌더러 / 씬 ================= */
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(PR);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x040304);
+scene.fog = new THREE.FogExp2(0x040304, 0.014);
+
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.05, 500);
+camera.position.set(3, 3.6, 9);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.minDistance = 1.8;
+controls.maxDistance = 90;
+controls.maxPolarAngle = Math.PI * .495;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.8;
+controls.enablePan = false;
+controls.target.set(0, 2.2, 0);
+
+/* ================= 바닥 + 화염 조명 ================= */
+function gridTex() {
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#0d0c0d'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 2600; i++) { g.fillStyle = `rgba(${Math.random() < .5 ? '255,255,255' : '0,0,0'},${Math.random() * .05})`; g.fillRect(Math.random() * S, Math.random() * S, 2, 2); }
+  g.strokeStyle = 'rgba(255,255,255,.09)'; g.lineWidth = 2; g.strokeRect(0, 0, S, S);
+  g.strokeStyle = 'rgba(255,255,255,.035)'; g.lineWidth = 1;
+  for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(i * S / 4, 0); g.lineTo(i * S / 4, S); g.moveTo(0, i * S / 4); g.lineTo(S, i * S / 4); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(100, 100);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ map: gridTex(), roughness: .85, metalness: .1 }));
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+scene.add(new THREE.HemisphereLight(0x2a3245, 0x050404, .35));
+const fireLight = new THREE.PointLight(0xff8a3c, 30, 40, 2);
+scene.add(fireLight);
+
+/* ================= 공통 GLSL ================= */
+const colorsU = { uC0: { value: new THREE.Color() }, uC1: { value: new THREE.Color() }, uC2: { value: new THREE.Color() },
+                  uC3: { value: new THREE.Color() }, uC4: { value: new THREE.Color() } };
+const GLSL_NOISE = /* glsl */`
+uniform vec3 uC0,uC1,uC2,uC3,uC4;
+vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}
+float snoise(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+  i=mod289(i);
+  vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+  float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z);
+  vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+  vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));
+  p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;
+  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+float ssr(float a,float b,float x){return 1.-smoothstep(b,a,x);}
+float h21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+  return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+1.),f.x),f.y);}
+float fbm2(vec2 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*vnoise(p);p=p*2.07+vec2(1.7,9.2);a*=.5;}return s;}
+vec3 fireRamp(float t){
+  vec3 c=mix(uC0*.27,uC1,smoothstep(.0,.33,t));
+  c=mix(c,uC2,smoothstep(.3,.58,t));
+  c=mix(c,uC3,smoothstep(.55,.82,t));
+  c=mix(c,uC4,smoothstep(.82,1.,t));
+  return c;
+}`;
+
+/* ================= 볼류메트릭 화염구 ================= */
+const volMat = new THREE.ShaderMaterial({
+  uniforms: { ...colorsU, uFT: { value: 0 }, uCamObj: { value: new THREE.Vector3() }, uTail: { value: 1 },
+              uIntensity: { value: 2.2 }, uPulse: { value: 1 }, uTemp: { value: .98 }, uTurb: { value: 1 } },
+  vertexShader: `varying vec3 vPos; void main(){ vPos=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: /* glsl */`
+    uniform vec3 uCamObj; uniform float uFT,uTail,uIntensity,uPulse,uTemp,uTurb; varying vec3 vPos;
+    ${GLSL_NOISE}
+    float fbm(vec3 p){float s=0.,a=.5;for(int i=0;i<4;i++){s+=a*snoise(p);p=p*2.02+vec3(0.,0.,uFT*1.6);a*=.5;}return s;}
+    void main(){
+      vec3 ro=uCamObj; vec3 rd=normalize(vPos-ro);
+      float b=dot(ro,rd), c=dot(ro,ro)-1., h=b*b-c; if(h<0.) discard;
+      h=sqrt(h); float t0=max(-b-h,0.), t1=-b+h;
+      const int STEPS=${IS_MOBILE ? 34 : 48}; float dt=(t1-t0)/float(STEPS);
+      float t=t0+dt*fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453);
+      vec3 col=vec3(0.); float T=1.;
+      for(int i=0;i<STEPS;i++){
+        vec3 p=ro+rd*t;
+        const float HR=.27;
+        vec3 q=p-vec3(0.,0.,.6);
+        float tl=1.5*uTail;
+        float back=clamp(-q.z/tl,0.,1.);
+        vec3 w=p*3.1+vec3(0.,0.,uFT*3.6);
+        w+=.4*vec3(snoise(p*1.6+uFT*.5),snoise(p*1.6+17.+uFT*.5),0.);
+        float n=fbm(w);
+        float sdH=length(q)-HR*uPulse;
+        float r=HR*(1.+1.1*back)*pow(1.-back,.6);
+        float sdT=max(length(q.xy)-r,-q.z-tl);
+        float sd=q.z<0.?min(sdH,sdT):sdH;
+        float amp=(.09+.3*back)*uTurb;
+        float d=clamp(-(sd-n*amp)*8.,0.,1.);
+        if(d>.001){
+          float lq=length(q)/HR;
+          float temp=clamp(uTemp-lq*.55-back*.5+n*.55,0.,1.);
+          float t4=temp*temp*temp*temp;
+          vec3 e=fireRamp(temp)*(.45+1.6*temp+uIntensity*t4);
+          float smoke=smoothstep(.55,1.,back)*ssr(.45,.1,temp);
+          float a=d*dt*(3.5+22.*smoke);
+          col+=T*e*d*dt*1.05*(1.-smoke*.8);
+          col+=T*vec3(.025,.02,.017)*a*smoke;
+          T*=exp(-a);
+          if(T<.02) break;
+        }
+        t+=dt;
+      }
+      gl_FragColor=vec4(col,1.-T);
+    }`,
+  side: THREE.BackSide, transparent: true, depthWrite: false,
+  blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+});
+const volume = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), volMat);
+volume.renderOrder = 3;
+scene.add(volume);
+
+function glowTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.25, 'rgba(255,255,255,.45)');
+  gr.addColorStop(.6, 'rgba(255,255,255,.08)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+core.renderOrder = 4;
+scene.add(core);
+
+/* ================= 파티클 ================= */
+const uScale = { value: 1 }, timeU = { value: 0 }, firePosU = { value: new THREE.Vector3() };
+const SPRITE_VS = /* glsl */`
+  attribute float aAge; attribute float aSize; attribute float aSeed;
+  uniform float uScale; uniform vec3 uFirePos;
+  varying float vAge; varying float vSeed; varying float vLight;
+  void main(){
+    vec4 mv=modelViewMatrix*vec4(position,1.);
+    gl_Position=projectionMatrix*mv;
+    gl_PointSize=aSize*uScale/-mv.z;
+    vAge=aAge; vSeed=aSeed;
+    float d=distance(position,uFirePos); vLight=clamp(1.4/(1.+d*d*1.2),0.,1.);
+  }`;
+function makePool(max, material, order) {
+  const geo = new THREE.BufferGeometry();
+  const P = { max, n: 0, geo, pos: new Float32Array(max * 3), vel: new Float32Array(max * 3), age: new Float32Array(max), size: new Float32Array(max),
+    seed: new Float32Array(max), t: new Float32Array(max), life: new Float32Array(max), s0: new Float32Array(max), s1: new Float32Array(max) };
+  geo.setAttribute('position', new THREE.BufferAttribute(P.pos, 3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aAge', new THREE.BufferAttribute(P.age, 1).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(P.size, 1).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aSeed', new THREE.BufferAttribute(P.seed, 1).setUsage(THREE.DynamicDrawUsage));
+  P.obj = new THREE.Points(geo, material); P.obj.frustumCulled = false; P.obj.renderOrder = order;
+  scene.add(P.obj);
+  return P;
+}
+function spawn(P, p, v, life, s0, s1) {
+  if (P.n >= P.max) return;
+  const i = P.n++, i3 = i * 3;
+  P.pos[i3] = p.x; P.pos[i3 + 1] = p.y; P.pos[i3 + 2] = p.z;
+  P.vel[i3] = v.x; P.vel[i3 + 1] = v.y; P.vel[i3 + 2] = v.z;
+  P.t[i] = 0; P.life[i] = life; P.s0[i] = s0; P.s1[i] = s1; P.seed[i] = Math.random(); P.age[i] = 0; P.size[i] = s0;
+}
+function kill(P, i) {
+  const j = --P.n; if (i === j) return;
+  const i3 = i * 3, j3 = j * 3;
+  for (let k = 0; k < 3; k++) { P.pos[i3 + k] = P.pos[j3 + k]; P.vel[i3 + k] = P.vel[j3 + k]; }
+  P.t[i] = P.t[j]; P.life[i] = P.life[j]; P.s0[i] = P.s0[j]; P.s1[i] = P.s1[j]; P.seed[i] = P.seed[j]; P.age[i] = P.age[j]; P.size[i] = P.size[j];
+}
+function updatePool(P, dt, drag, buoy, sizeCurve, extra) {
+  const dr = Math.exp(-drag * dt);
+  for (let i = 0; i < P.n; i++) {
+    P.t[i] += dt;
+    if (P.t[i] >= P.life[i]) { kill(P, i); i--; continue; }
+    const i3 = i * 3;
+    P.vel[i3] *= dr; P.vel[i3 + 1] = P.vel[i3 + 1] * dr + buoy * dt; P.vel[i3 + 2] *= dr;
+    if (extra) extra(P, i, i3, dt);
+    P.pos[i3] += P.vel[i3] * dt; P.pos[i3 + 1] += P.vel[i3 + 1] * dt; P.pos[i3 + 2] += P.vel[i3 + 2] * dt;
+    const a = P.t[i] / P.life[i];
+    P.age[i] = a; P.size[i] = P.s0[i] + (P.s1[i] - P.s0[i]) * sizeCurve(a);
+  }
+  P.geo.setDrawRange(0, P.n);
+  for (const k of ['position', 'aAge', 'aSize', 'aSeed']) P.geo.attributes[k].needsUpdate = true;
+}
+
+const fireMat = new THREE.ShaderMaterial({
+  uniforms: { ...colorsU, uScale, uTime: timeU, uFirePos: firePosU, uBright: { value: .42 } },
+  vertexShader: SPRITE_VS,
+  fragmentShader: /* glsl */`
+    uniform float uTime,uBright; varying float vAge; varying float vSeed; varying float vLight;
+    ${GLSL_NOISE}
+    void main(){
+      vec2 uv=gl_PointCoord-.5; uv.y=-uv.y;
+      float an=vSeed*6.283; uv=mat2(cos(an),-sin(an),sin(an),cos(an))*uv;
+      float r=length(uv)*2.;
+      float n=fbm2(uv*3.2+vec2(vSeed*31.,vSeed*17.-uTime*1.7-vAge*2.5));
+      float m=ssr(1.,.1,r+(n-.5)*1.+vAge*.45)*(1.-smoothstep(.75,1.,r));
+      float temp=clamp((.93-vAge*.95)*m+(n-.5)*.3,0.,1.);
+      vec3 c=fireRamp(temp)*(.25+1.6*temp*temp);
+      float fade=smoothstep(.05,.32,vAge)*(1.-smoothstep(.55,1.,vAge));
+      gl_FragColor=vec4(c*m*fade*uBright,1.);
+    }`,
+  blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+});
+const smokeMat = new THREE.ShaderMaterial({
+  uniforms: { ...colorsU, uScale, uTime: timeU, uFirePos: firePosU, uFlash: { value: 0 }, uSmoke: { value: new THREE.Color() }, uOpacity: { value: .4 } },
+  vertexShader: SPRITE_VS,
+  fragmentShader: /* glsl */`
+    uniform float uTime,uFlash,uOpacity; uniform vec3 uSmoke; varying float vAge; varying float vSeed; varying float vLight;
+    ${GLSL_NOISE}
+    void main(){
+      vec2 uv=gl_PointCoord-.5;
+      float an=vSeed*6.283+vAge*1.2; uv=mat2(cos(an),-sin(an),sin(an),cos(an))*uv;
+      float r=length(uv)*2.;
+      float n=fbm2(uv*2.6+vec2(vSeed*23.,vSeed*11.+uTime*.25));
+      float m=ssr(1.,.15,r+(n-.5)*.95)*(1.-smoothstep(.75,1.,r));
+      float a=m*uOpacity*smoothstep(0.,.18,vAge)*(1.-smoothstep(.45,1.,vAge));
+      vec3 base=uSmoke*(.7+n*.6);
+      vec3 lit=uC2*(.5+uFlash*3.)*vLight*vLight*(1.-vAge*.8);
+      gl_FragColor=vec4(base+lit*.35,a);
+    }`,
+  blending: THREE.NormalBlending, transparent: true, depthWrite: false,
+});
+const emberMat = new THREE.ShaderMaterial({
+  uniforms: { uScale, uTime: timeU, uFirePos: firePosU, uEmber: { value: new THREE.Color() } },
+  vertexShader: SPRITE_VS,
+  fragmentShader: /* glsl */`
+    uniform float uTime; uniform vec3 uEmber; varying float vAge; varying float vSeed; varying float vLight;
+    void main(){
+      vec2 uv=gl_PointCoord-.5; float r2=dot(uv,uv)*4.;
+      float core=exp(-r2*22.), glow=exp(-r2*4.)*.25;
+      float fl=.55+.45*sin(uTime*(8.+vSeed*14.)+vSeed*40.);
+      float fade=smoothstep(0.,.08,vAge)*(1.-smoothstep(.5,1.,vAge));
+      vec3 c=mix(uEmber,vec3(1.,.95,.85),(1.-vAge)*.35)*4.;
+      gl_FragColor=vec4(c*(core+glow)*fl*fade,1.);
+    }`,
+  blending: THREE.AdditiveBlending, transparent: true, depthWrite: false,
+});
+const smoke = makePool(500, smokeMat, 1);
+const fire = makePool(2400, fireMat, 4);
+const embers = makePool(1600, emberMat, 5);
+
+const SPARK_MAX = 1200;
+const sparkGeo = new THREE.BufferGeometry();
+const sparkLine = new Float32Array(SPARK_MAX * 6), sparkCol = new Float32Array(SPARK_MAX * 6);
+sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkLine, 3).setUsage(THREE.DynamicDrawUsage));
+sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkCol, 3).setUsage(THREE.DynamicDrawUsage));
+const sparkObj = new THREE.LineSegments(sparkGeo, new THREE.LineBasicMaterial({ vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+sparkObj.frustumCulled = false; sparkObj.renderOrder = 6;
+scene.add(sparkObj);
+const sparks = { max: SPARK_MAX, n: 0, pos: new Float32Array(SPARK_MAX * 3), vel: new Float32Array(SPARK_MAX * 3), t: new Float32Array(SPARK_MAX), life: new Float32Array(SPARK_MAX) };
+const sparkColor = new THREE.Color();
+function spawnSpark(p, v, life) {
+  if (sparks.n >= sparks.max) return;
+  const i = sparks.n++, i3 = i * 3;
+  sparks.pos[i3] = p.x; sparks.pos[i3 + 1] = p.y; sparks.pos[i3 + 2] = p.z;
+  sparks.vel[i3] = v.x; sparks.vel[i3 + 1] = v.y; sparks.vel[i3 + 2] = v.z;
+  sparks.t[i] = 0; sparks.life[i] = life;
+}
+function updateSparks(dt) {
+  const S = sparks, dr = Math.exp(-.35 * dt), g = C.sparks.gravity, br = C.sparks.bright, floor = C.post.ground;
+  for (let i = 0; i < S.n; i++) {
+    S.t[i] += dt;
+    if (S.t[i] >= S.life[i]) {
+      const j = --S.n;
+      if (i !== j) { for (let k = 0; k < 3; k++) { S.pos[i * 3 + k] = S.pos[j * 3 + k]; S.vel[i * 3 + k] = S.vel[j * 3 + k]; } S.t[i] = S.t[j]; S.life[i] = S.life[j]; }
+      i--; continue;
+    }
+    const i3 = i * 3;
+    S.vel[i3] *= dr; S.vel[i3 + 1] = S.vel[i3 + 1] * dr - g * dt; S.vel[i3 + 2] *= dr;
+    S.pos[i3] += S.vel[i3] * dt; S.pos[i3 + 1] += S.vel[i3 + 1] * dt; S.pos[i3 + 2] += S.vel[i3 + 2] * dt;
+    if (floor && S.pos[i3 + 1] < .01) { S.pos[i3 + 1] = .01; S.vel[i3 + 1] *= -.35; S.vel[i3] *= .6; S.vel[i3 + 2] *= .6; }
+    const a = S.t[i] / S.life[i];
+    const k6 = i * 6, L = .028;
+    sparkLine[k6] = S.pos[i3]; sparkLine[k6 + 1] = S.pos[i3 + 1]; sparkLine[k6 + 2] = S.pos[i3 + 2];
+    sparkLine[k6 + 3] = S.pos[i3] - S.vel[i3] * L; sparkLine[k6 + 4] = S.pos[i3 + 1] - S.vel[i3 + 1] * L; sparkLine[k6 + 5] = S.pos[i3 + 2] - S.vel[i3 + 2] * L;
+    const f = (1 - a) * (1 - a) * (.7 + .3 * Math.sin(S.t[i] * 40 + i)) * 7 * br, hot = (1 - a) * (1 - a) * .55;
+    const r = (sparkColor.r + (1 - sparkColor.r) * hot) * f, gg = (sparkColor.g + (1 - sparkColor.g) * hot) * f, b = (sparkColor.b + (1 - sparkColor.b) * hot) * f;
+    sparkCol[k6] = r; sparkCol[k6 + 1] = gg; sparkCol[k6 + 2] = b;
+    sparkCol[k6 + 3] = r * .1; sparkCol[k6 + 4] = gg * .1; sparkCol[k6 + 5] = b * .1;
+  }
+  sparkGeo.setDrawRange(0, S.n * 2);
+  sparkGeo.attributes.position.needsUpdate = true; sparkGeo.attributes.color.needsUpdate = true;
+}
+
+/* ================= 포스트 ================= */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const heatPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uCenter: { value: new THREE.Vector2(.5, .5) }, uRadius: { value: .2 }, uAspect: { value: 1 }, uTime: { value: 0 }, uStrength: { value: 1 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse; uniform vec2 uCenter; uniform float uRadius,uAspect,uTime,uStrength; varying vec2 vUv;
+    void main(){
+      vec2 d=vUv-uCenter; d.x*=uAspect; d.y-=uRadius*.6;
+      float f=1.-smoothstep(0.,1.,length(d*vec2(1.,.65))/(uRadius*1.9));
+      vec2 off=vec2(sin(vUv.y*95.-uTime*10.+sin(vUv.x*60.+uTime*3.)),
+                    cos(vUv.x*80.+uTime*8.+sin(vUv.y*45.-uTime*2.)))*.0032*f*uStrength;
+      vec4 c=texture2D(tDiffuse,vUv+off);
+      float v=1.-smoothstep(.3,1.25,length((vUv-.5)*vec2(uAspect,1.)));
+      gl_FragColor=vec4(c.rgb*mix(.45,1.,v),c.a);
+    }`,
+});
+composer.addPass(heatPass);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .55, .5, .92);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h); composer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  uScale.value = h * PR / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+  heatPass.uniforms.uAspect.value = w / h;
+}
+addEventListener('resize', resize);
+resize();
+
+/* ================= 설정 적용 ================= */
+function applyConfig() {
+  colorsU.uC0.value.set(C.colors.c0); colorsU.uC1.value.set(C.colors.c1); colorsU.uC2.value.set(C.colors.c2);
+  colorsU.uC3.value.set(C.colors.c3); colorsU.uC4.value.set(C.colors.c4);
+  smokeMat.uniforms.uSmoke.value.set(C.colors.smoke).multiplyScalar(.6);
+  smokeMat.uniforms.uOpacity.value = C.smoke.opacity;
+  emberMat.uniforms.uEmber.value.set(C.colors.ember);
+  sparkColor.set(C.colors.spark);
+  fireMat.uniforms.uBright.value = C.fire.bright;
+  volMat.uniforms.uTemp.value = C.core.temperature;
+  volMat.uniforms.uTurb.value = C.core.turbulence;
+  core.material.color.set(C.colors.c3).multiplyScalar(C.core.glow);
+  fireLight.color.set(C.colors.c2);
+  bloom.radius = C.post.bloomRadius;
+  renderer.toneMappingExposure = C.post.exposure;
+  ground.visible = C.post.ground;
+}
+applyConfig();
+
+/* ================= 화염구 시뮬레이션 ================= */
+const HOVER_BASE = new THREE.Vector3(.82, .5, -.28).normalize();
+const UP = new THREE.Vector3(0, 1, 0), ZAX = new THREE.Vector3(0, 0, 1);
+const F = { pos: new THREE.Vector3(0, 2.2, 0), prev: new THREE.Vector3(0, 2.2, 0), vel: new THREE.Vector3(), tail: new THREE.Vector3().copy(HOVER_BASE),
+            hoverWind: new THREE.Vector3(), windMag: 6, pathT: 0, flash: 0, ft: 0 };
+let simT = 0;
+const target = new THREE.Vector3(), v = new THREE.Vector3(), p = new THREE.Vector3();
+const hoverY = () => C.post.ground ? 2.2 : 0;
+
+function emitRate(rate, dt, fn) { let n = rate * dt; while (n >= 1) { fn(); n--; } if (Math.random() < n) fn(); }
+function explode() {
+  F.flash = 1;
+  const s = C.core.size;
+  for (let i = 0; i < 160; i++) { randSphere(v, 1).normalize().multiplyScalar(rand(2, 7) * s); p.copy(F.pos).addScaledVector(v, .05); spawn(fire, p, v, rand(.5, 1.1), rand(.4, .7) * s, rand(1.4, 2.4) * s); }
+  for (let i = 0; i < 50; i++) { randSphere(v, 1).normalize().multiplyScalar(rand(1, 3)); p.copy(F.pos).addScaledVector(v, .15); spawn(smoke, p, v, rand(2, 3.5), rand(1, 1.6) * s, rand(3, 5) * s); }
+  for (let i = 0; i < 260; i++) { randSphere(v, 1).normalize().multiplyScalar(rand(4, 13)); spawnSpark(F.pos, v, rand(.6, 1.6)); }
+  for (let i = 0; i < 200; i++) { randSphere(v, 1).normalize().multiplyScalar(rand(1, 6)); p.copy(F.pos).addScaledVector(v, .06); spawn(embers, p, v, rand(1.5, 3.2), rand(.04, .08), .02); }
+}
+
+function step(dt) {
+  simT += dt; timeU.value = simT;
+  F.ft += dt * C.core.flow;
+  const fly = C.motion.mode === 'fly';
+  F.prev.copy(F.pos);
+  if (fly) {
+    F.pathT += dt * C.motion.flySpeed;
+    const t = F.pathT, ps = C.motion.pathSize;
+    target.set(9 * ps * Math.sin(t * .35), hoverY() + .6 + 1.0 * Math.sin(t * .8), 6 * ps * Math.sin(t * .7));
+    F.pos.lerp(target, 1 - Math.exp(-dt * 12));
+  } else {
+    target.set(0, hoverY() + Math.sin(simT * 1.3) * .08, 0);
+    F.pos.lerp(target, 1 - Math.exp(-dt * 2.5));
+  }
+  v.subVectors(F.pos, F.prev).divideScalar(dt);
+  F.vel.lerp(v, 1 - Math.exp(-dt * 10));
+
+  // 겉보기 바람 = 제자리 바람 + (-속도) + 약한 부력
+  F.hoverWind.copy(HOVER_BASE);
+  F.hoverWind.x += Math.sin(simT * .9) * .06; F.hoverWind.y += Math.sin(simT * 1.3 + 1) * .07; F.hoverWind.z += Math.sin(simT * .7 + 2) * .06;
+  F.hoverWind.normalize().multiplyScalar(fly ? 0 : C.motion.wind);
+  tmpV.copy(F.vel).multiplyScalar(-1).add(F.hoverWind).addScaledVector(UP, .7);
+  F.windMag = tmpV.length();
+  F.tail.lerp(tmpV.normalize(), 1 - Math.exp(-dt * 8)).normalize();
+  F.flash = Math.max(0, F.flash - dt * 1.6);
+
+  const T = F.tail, s = C.core.size, wk = F.windMag / 6;
+  const hw = F.hoverWind;
+  // 꼬리 화염
+  emitRate(C.fire.rate, dt, () => {
+    p.lerpVectors(F.prev, F.pos, Math.random()); randSphere(tmpV2, .55 * s); p.add(tmpV2);
+    randSphere(v, .9 * C.fire.speed).addScaledVector(F.vel, .1).addScaledVector(hw, rand(.37, .92) * C.fire.speed).addScaledVector(T, rand(.3, 1.2) * C.fire.speed);
+    spawn(fire, p, v, rand(.35, .95) * C.fire.life, rand(.38, .6) * s * C.fire.size, rand(.75, 1.3) * s * C.fire.size);
+  });
+  // 머리 표면 혀
+  emitRate(C.fire.rate * .21, dt, () => {
+    randSphere(p, 1).normalize().multiplyScalar(.6 * s); tmpV2.copy(p); p.add(F.pos);
+    v.copy(tmpV2).multiplyScalar(rand(.6, 1.6)).addScaledVector(F.vel, .5).addScaledVector(T, rand(1, 2.5) * Math.max(.4, wk));
+    spawn(fire, p, v, rand(.18, .4) * C.fire.life, rand(.18, .3) * s * C.fire.size, rand(.35, .6) * s * C.fire.size);
+  });
+  emitRate(C.smoke.rate, dt, () => {
+    p.copy(F.pos).addScaledVector(T, rand(2.6, 3.4) * s * Math.min(1, wk + .3)); randSphere(tmpV2, .35 * s); p.add(tmpV2);
+    randSphere(v, .3).addScaledVector(F.vel, .05).addScaledVector(hw, rand(.2, .37));
+    spawn(smoke, p, v, rand(1.4, 2.4), rand(.7, 1) * s * C.smoke.size, rand(2, 3.2) * s * C.smoke.size);
+  });
+  emitRate(C.embers.rate, dt, () => {
+    p.lerpVectors(F.prev, F.pos, Math.random()); randSphere(tmpV2, .5 * s); p.add(tmpV2);
+    randSphere(v, 1.4 * C.embers.speed).addScaledVector(F.vel, .12).addScaledVector(hw, rand(.4, 1.2) * C.embers.speed).addScaledVector(T, rand(.3, 1.5));
+    spawn(embers, p, v, rand(.6, 1.7) * C.embers.life, rand(.03, .065) * C.embers.size, .015 * C.embers.size);
+  });
+  emitRate(C.sparks.rate, dt, () => {
+    randSphere(p, .45 * s).add(F.pos);
+    randSphere(v, 2.8 * C.sparks.speed).addScaledVector(F.vel, .25).addScaledVector(hw, rand(.6, 1.5) * C.sparks.speed).addScaledVector(T, rand(.5, 2) * C.sparks.speed);
+    spawnSpark(p, v, rand(.3, .8) * C.sparks.life);
+  });
+
+  updatePool(fire, dt, 1.1, .5, a => Math.sqrt(a));
+  updatePool(smoke, dt, .7, .35, a => 1 - (1 - a) * (1 - a), (P, i, i3, dt) => {
+    P.vel[i3] += Math.sin(simT * .7 + P.seed[i] * 20) * .3 * dt;
+    P.vel[i3 + 2] += Math.cos(simT * .6 + P.seed[i] * 13) * .3 * dt;
+  });
+  updatePool(embers, dt, .5, .3, a => a, (P, i, i3, dt) => {
+    const q = P.seed[i] * 50;
+    P.vel[i3] += Math.sin(simT * 3.1 + q) * 3 * dt;
+    P.vel[i3 + 1] += Math.cos(simT * 2.3 + q * 1.7) * 3 * dt;
+    P.vel[i3 + 2] += Math.sin(simT * 2.7 + q * 2.3) * 3 * dt;
+  });
+  updateSparks(dt);
+}
+
+/* 패널에 가려지지 않도록 화면 중심을 옮기는 오프셋 */
+const viewOff = { x: 0, y: 0, tx: 0, ty: 0 };
+window.__setViewOffset = (x, y) => { viewOff.tx = x; viewOff.ty = y; };
+
+/* ================= 렌더 루프 ================= */
+const clock = new THREE.Clock();
+const inv = new THREE.Matrix4();
+let acc = 0;
+function frame() {
+  const d = Math.min(clock.getDelta(), .1);
+  acc += d;
+  const h = 1 / 60; let n = 0;
+  while (acc >= h && n < 6) { step(h); acc -= h; n++; }
+
+  const VS = 2.3 * C.core.size;
+  tmpV.copy(F.tail).multiplyScalar(-1);
+  volume.quaternion.setFromUnitVectors(ZAX, tmpV);
+  volume.position.copy(F.pos).addScaledVector(F.tail, .6 * VS);
+  const pulse = 1 + .045 * Math.sin(simT * 17) + .03 * Math.sin(simT * 29 + 1) + F.flash * .35;
+  volume.scale.setScalar(VS * (1 + F.flash * .25));
+  volume.updateMatrixWorld();
+  inv.copy(volume.matrixWorld).invert();
+  volMat.uniforms.uCamObj.value.copy(camera.position).applyMatrix4(inv);
+  volMat.uniforms.uFT.value = F.ft;
+  volMat.uniforms.uTail.value = clamp((.35 + .65 * clamp(F.windMag / 6, 0, 1.2)) * C.core.tail, .2, 1.05);
+  volMat.uniforms.uPulse.value = pulse;
+  volMat.uniforms.uIntensity.value = C.core.intensity + F.flash * 8;
+
+  core.position.copy(F.pos);
+  core.scale.setScalar(1.9 * C.core.size * pulse * (1 + F.flash));
+  firePosU.value.copy(F.pos);
+  smokeMat.uniforms.uFlash.value = F.flash;
+
+  const flick = .82 + .1 * Math.sin(simT * 13.7) + .06 * Math.sin(simT * 27.3 + 2) + .05 * Math.sin(simT * 51.1);
+  fireLight.position.copy(F.pos);
+  fireLight.intensity = (30 * flick + F.flash * 250) * C.post.light * C.core.size * C.core.size;
+
+  // 카메라 추적
+  tmpV.copy(controls.target);
+  controls.target.lerp(F.pos, 1 - Math.exp(-d * 3.5));
+  tmpV.subVectors(controls.target, tmpV);
+  camera.position.add(tmpV);
+  controls.update();
+  if (C.post.ground && camera.position.y < .3) camera.position.y = .3;
+
+  tmpV.copy(F.pos).project(camera);
+  heatPass.uniforms.uCenter.value.set(tmpV.x * .5 + .5, tmpV.y * .5 + .5);
+  const dist = camera.position.distanceTo(F.pos);
+  heatPass.uniforms.uRadius.value = clamp(1.5 * C.core.size / (dist * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2)), .01, 1.2) * .5;
+  heatPass.uniforms.uTime.value = simT;
+  heatPass.uniforms.uStrength.value = tmpV.z < 1 ? (1 + F.flash * 2) * C.post.heat : 0;
+  bloom.strength = C.post.bloom + F.flash * .8;
+
+  const k = 1 - Math.exp(-d * 8);
+  viewOff.x += (viewOff.tx - viewOff.x) * k; viewOff.y += (viewOff.ty - viewOff.y) * k;
+  if (Math.abs(viewOff.x) + Math.abs(viewOff.y) > .5) camera.setViewOffset(innerWidth, innerHeight, viewOff.x, viewOff.y, innerWidth, innerHeight);
+  else if (camera.view && camera.view.enabled) camera.clearViewOffset();
+
+  composer.render();
+  requestAnimationFrame(frame);
+}
+for (let i = 0; i < 90; i++) step(1 / 60);
+
+/* ================= 내보낸 파일(EMBED) 모드 ================= */
+if (EMBED) {
+  renderer.domElement.addEventListener('dblclick', explode);
+}
+
+/* ================= 에디터 ================= */
+if (!EMBED) initEditor();
+
+function initEditor() {
+  const $ = id => document.getElementById(id);
+  const el = (tag, attrs = {}, html = '') => { const e = document.createElement(tag); Object.assign(e, attrs); if (html) e.innerHTML = html; return e; };
+  const getP = path => path.split('.').reduce((o, k) => o[k], C);
+  const setP = (path, val) => { const ks = path.split('.'); const last = ks.pop(); ks.reduce((o, k) => o[k], C)[last] = val; };
+  const toast = msg => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1800); };
+
+  // 상단 바
+  const top = el('div', { className: 'top' });
+  top.innerHTML = `<span class="ttl">FIREBALL FX</span>
+    <button id="bFly">비행</button><button id="bHover">제자리</button>
+    <button id="bBoom" class="boom">폭발</button><button id="bRot" class="on">자동 회전</button>
+    <span class="sp"></span><button id="bEdit" class="on">편집</button><button id="bExport">코드 내보내기</button>`;
+  document.body.appendChild(top);
+  document.body.appendChild(el('div', { id: 'toast' }));
+
+  const syncMode = () => { $('bFly').classList.toggle('on', C.motion.mode === 'fly'); $('bHover').classList.toggle('on', C.motion.mode !== 'fly'); };
+  $('bFly').onclick = () => { C.motion.mode = 'fly'; syncMode(); };
+  $('bHover').onclick = () => { C.motion.mode = 'hover'; syncMode(); };
+  $('bBoom').onclick = explode;
+  $('bRot').onclick = () => { controls.autoRotate = !controls.autoRotate; $('bRot').classList.toggle('on', controls.autoRotate); };
+  const updateOffset = () => {
+    if (panel.classList.contains('hide')) return window.__setViewOffset(0, 0);
+    const topB = top.getBoundingClientRect().bottom;
+    if (innerWidth <= 700) {            // 하단 시트: 상단 바 아래 ~ 패널 위 영역의 중앙으로
+      const pTop = innerHeight - 8 - panel.offsetHeight;
+      window.__setViewOffset(0, (innerHeight - pTop - topB) / 2);
+    } else {                            // 우측 패널: 남은 왼쪽 영역의 중앙으로
+      window.__setViewOffset((12 + panel.offsetWidth) / 2, 0);
+    }
+  };
+  $('bEdit').onclick = () => { panel.classList.toggle('hide'); $('bEdit').classList.toggle('on', !panel.classList.contains('hide')); updateOffset(); };
+  addEventListener('resize', () => setTimeout(updateOffset, 50));
+  syncMode();
+
+  // 패널
+  const SCHEMA = [
+    ['색상', [['colors.c4', '코어 (백열)', 'color'], ['colors.c3', '안쪽 불꽃', 'color'], ['colors.c2', '중간 불꽃', 'color'],
+              ['colors.c1', '바깥 불꽃', 'color'], ['colors.c0', '꼬리 끝', 'color'], ['colors.ember', '불씨', 'color'],
+              ['colors.spark', '스파크', 'color'], ['colors.smoke', '연기', 'color']]],
+    ['화염구 본체', [['core.size', '크기', .3, 3, .01], ['core.intensity', '코어 밝기', 0, 8, .05], ['core.temperature', '온도', .5, 1.4, .01],
+                     ['core.turbulence', '난류', 0, 3, .01], ['core.flow', '불길 흐름 속도', 0, 3, .01], ['core.tail', '꼬리 길이', .2, 1.6, .01],
+                     ['core.glow', '코어 글로우', 0, 2, .01]]],
+    ['움직임', [['motion.flySpeed', '비행 속도', .1, 3, .01], ['motion.pathSize', '비행 반경', .3, 3, .01], ['motion.wind', '제자리 바람', 0, 15, .1]]],
+    ['화염 파티클', [['fire.rate', '방출량', 0, 900, 1], ['fire.size', '크기', .2, 3, .01], ['fire.life', '수명', .2, 3, .01],
+                    ['fire.speed', '속도', 0, 3, .01], ['fire.bright', '밝기', 0, 1.5, .01]]],
+    ['불씨', [['embers.rate', '방출량', 0, 500, 1], ['embers.size', '크기', .2, 4, .01], ['embers.life', '수명', .2, 3, .01], ['embers.speed', '속도', 0, 3, .01]]],
+    ['스파크', [['sparks.rate', '방출량', 0, 400, 1], ['sparks.life', '수명', .2, 3, .01], ['sparks.speed', '속도', 0, 3, .01],
+               ['sparks.gravity', '중력', 0, 20, .1], ['sparks.bright', '밝기', 0, 3, .01]]],
+    ['연기', [['smoke.rate', '방출량', 0, 60, .5], ['smoke.opacity', '불투명도', 0, 1, .01], ['smoke.size', '크기', .2, 3, .01]]],
+    ['화면 / 후처리', [['post.bloom', '블룸 세기', 0, 3, .01], ['post.bloomRadius', '블룸 반경', 0, 1, .01], ['post.heat', '열 왜곡', 0, 3, .01],
+                      ['post.exposure', '노출', .3, 2.5, .01], ['post.light', '주변 조명', 0, 4, .01], ['post.ground', '바닥 표시', 'bool']]],
+  ];
+  const panel = el('div', { id: 'panel' });
+  const head = el('div', { className: 'ph' });
+  head.innerHTML = `
+    <div class="row"><select id="preset"></select><button class="btn" id="reset">초기화</button></div>
+    <div class="row"><input type="text" id="saveName" placeholder="저장할 이름" maxlength="24"><button class="btn pri" id="save">저장</button></div>
+    <div class="saved" id="savedList"></div>`;
+  panel.appendChild(head);
+  const inputs = [];
+  SCHEMA.forEach(([title, items], si) => {
+    const det = el('details'); if (si < 2) det.open = true;
+    det.appendChild(el('summary', {}, title));
+    for (const it of items) {
+      const [path, label, a, b, st] = it;
+      const row = el('div', { className: 'ctl' });
+      row.appendChild(el('label', { title: label }, label));
+      let inp, val = el('span', { className: 'val' });
+      if (a === 'color') { inp = el('input', { type: 'color' }); }
+      else if (a === 'bool') { inp = el('input', { type: 'checkbox' }); inp.style.justifySelf = 'start'; inp.style.accentColor = 'var(--ac)'; }
+      else { inp = el('input', { type: 'range', min: a, max: b, step: st }); }
+      const sync = () => {
+        const v0 = getP(path);
+        if (a === 'color') { inp.value = v0; val.textContent = ''; }
+        else if (a === 'bool') { inp.checked = !!v0; val.textContent = ''; }
+        else { inp.value = v0; val.textContent = (+v0).toFixed(st >= 1 ? 0 : 2); }
+      };
+      inp.addEventListener('input', () => {
+        setP(path, a === 'color' ? inp.value : a === 'bool' ? inp.checked : +inp.value);
+        sync(); applyConfig();
+      });
+      inputs.push(sync);
+      row.appendChild(inp); row.appendChild(val);
+      det.appendChild(row);
+    }
+    panel.appendChild(det);
+  });
+  document.body.appendChild(panel);
+  if (innerWidth <= 700) { panel.classList.add('hide'); $('bEdit').classList.remove('on'); }
+  requestAnimationFrame(updateOffset);
+  const syncAll = () => { inputs.forEach(f => f()); applyConfig(); syncMode(); };
+  syncAll();
+
+  // 프리셋 & 저장
+  const LS = 'fireballfx.saves.v1';
+  const loadSaves = () => { try { return JSON.parse(localStorage.getItem(LS) || '{}'); } catch (e) { return {}; } };
+  const writeSaves = o => { try { localStorage.setItem(LS, JSON.stringify(o)); return true; } catch (e) { return false; } };
+  const setConfig = cfg => { const fresh = merge(clone(DEFAULT), cfg); for (const k in fresh) C[k] = fresh[k]; syncAll(); };
+  const sel = $('preset');
+  const fillPresets = () => {
+    const saves = loadSaves();
+    sel.innerHTML = '<option value="">프리셋 불러오기…</option>' +
+      '<optgroup label="기본 프리셋">' + Object.keys(PRESETS).map(k => `<option value="p:${k}">${k}</option>`).join('') + '</optgroup>' +
+      (Object.keys(saves).length ? '<optgroup label="내 저장">' + Object.keys(saves).map(k => `<option value="s:${k}">${k}</option>`).join('') + '</optgroup>' : '');
+    const list = $('savedList'); list.innerHTML = '';
+    for (const k of Object.keys(saves)) {
+      const chip = el('div', { className: 'chip' });
+      const b1 = el('button', {}, k); b1.onclick = () => { setConfig(saves[k]); toast(`'${k}' 불러옴`); };
+      const b2 = el('button', { title: '삭제' }, '✕'); b2.onclick = () => { const s = loadSaves(); delete s[k]; writeSaves(s); fillPresets(); toast('삭제했어요'); };
+      chip.append(b1, b2); list.appendChild(chip);
+    }
+  };
+  sel.onchange = () => {
+    const v0 = sel.value; if (!v0) return;
+    if (v0.startsWith('p:')) setConfig(PRESETS[v0.slice(2)]);
+    else setConfig(loadSaves()[v0.slice(2)]);
+    toast(`${v0.slice(2)} 적용`); sel.value = '';
+  };
+  $('reset').onclick = () => { setConfig({}); toast('기본값으로 되돌렸어요'); };
+  $('save').onclick = () => {
+    const name = $('saveName').value.trim() || `내 이펙트 ${Object.keys(loadSaves()).length + 1}`;
+    const s = loadSaves(); s[name] = clone(C);
+    if (writeSaves(s)) { fillPresets(); $('saveName').value = ''; toast(`'${name}' 저장됨`); }
+    else toast('이 브라우저는 저장소를 막고 있어요 — 코드 내보내기를 이용하세요');
+  };
+  fillPresets();
+
+  // 내보내기 모달
+  const modal = el('div', { id: 'modal' });
+  modal.innerHTML = `<div class="mbox">
+    <div class="tabs"><button data-t="html" class="on">HTML (단독 실행)</button><button data-t="json">설정 JSON</button><button data-t="import">가져오기</button></div>
+    <textarea id="code" spellcheck="false"></textarea>
+    <div class="mfoot"><span class="note" id="note"></span>
+      <button class="btn" id="mCopy">복사</button><button class="btn pri" id="mDown">다운로드</button><button class="btn" id="mClose">닫기</button></div></div>`;
+  document.body.appendChild(modal);
+  let tab = 'html';
+  const buildHTML = cfg => {
+    const engine = document.getElementById('engine').textContent;
+    const imap = document.querySelector('script[type=importmap]').textContent.trim();
+    return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Fireball FX</title>
+<style>html,body{margin:0;height:100%;background:#040304;overflow:hidden}canvas{display:block;touch-action:none}</style>
+<script type="importmap">
+${imap}
+<\/script>
+<script>
+// 화염구 이펙트 설정 — 이 값만 바꿔도 이펙트가 바뀝니다. (더블클릭: 폭발)
+window.FX_EMBED = true;
+window.FX_CONFIG = ${JSON.stringify(cfg, null, 2)};
+<\/script>
+</head>
+<body>
+<script type="module">${engine}<\/script>
+</body>
+</html>
+`;
+  };
+  const render = () => {
+    modal.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
+    const ta = $('code');
+    ta.readOnly = tab !== 'import';
+    $('mDown').style.display = tab === 'import' ? 'none' : '';
+    $('mCopy').textContent = tab === 'import' ? '적용' : '복사';
+    if (tab === 'html') { ta.value = buildHTML(clone(C)); $('note').textContent = '이 HTML 하나만 열면 지금 이펙트가 그대로 재생돼요.'; }
+    else if (tab === 'json') { ta.value = JSON.stringify(C, null, 2); $('note').textContent = '설정값만 담긴 JSON이에요. 가져오기 탭에 붙여넣으면 복원돼요.'; }
+    else { ta.value = ''; ta.placeholder = '여기에 설정 JSON을 붙여넣고 [적용]을 누르세요'; $('note').textContent = ''; }
+  };
+  modal.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
+  $('bExport').onclick = () => { tab = 'html'; render(); modal.classList.add('show'); };
+  $('mClose').onclick = () => modal.classList.remove('show');
+  modal.onclick = e => { if (e.target === modal) modal.classList.remove('show'); };
+  $('mCopy').onclick = async () => {
+    const ta = $('code');
+    if (tab === 'import') {
+      try { setConfig(JSON.parse(ta.value)); toast('설정을 적용했어요'); modal.classList.remove('show'); }
+      catch (e) { toast('JSON 형식이 올바르지 않아요'); }
+      return;
+    }
+    try { await navigator.clipboard.writeText(ta.value); toast('복사했어요'); }
+    catch (e) { ta.select(); try { document.execCommand('copy'); toast('복사했어요'); } catch (e2) { toast('복사가 막혀 있어요 — 직접 선택해서 복사하세요'); } }
+  };
+  $('mDown').onclick = () => {
+    const isHtml = tab === 'html';
+    try {
+      const blob = new Blob([$('code').value], { type: isHtml ? 'text/html' : 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = isHtml ? 'fireball-fx.html' : 'fireball-fx.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast('다운로드를 시작했어요');
+    } catch (e) { toast('다운로드가 막혀 있어요 — 복사를 이용하세요'); }
+  };
+
+  window.__fx = { C, applyConfig, setConfig, explode, controls, camera, buildHTML };
+}
+
+frame();
+</script>
+</body>
+</html>
